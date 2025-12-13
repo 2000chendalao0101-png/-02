@@ -1,3 +1,18 @@
+# --- 🎨 网页界面设置 ---
+st.set_page_config(page_title="全球量化 V3", page_icon="🔐", layout="wide")
+
+# 👇👇👇 在这里加入这段“隐身代码” 👇👇👇
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# 👆👆👆 结束 👆👆👆
+
+# ... 后面接着写你的 check_password 函数 ...
 import streamlit as st
 import akshare as ak
 import numpy as np
@@ -214,4 +229,5 @@ if run_btn:
 
     else:
         st.error(msg)
+
 
