@@ -20,7 +20,7 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 # --- 2️⃣ 密码保护 (带缓存，防止刷新丢失) ---
 def check_password():
     # 👇 如果你还没设 Secrets，先临时用这个明文密码，部署后记得去后台改 Secrets
-    actual_password = st.secrets.get("app_password", "20000101") 
+    actual_password = st.secrets.get("app_password") 
 
     if "password_correct" not in st.session_state:
         st.session_state.password_correct = False
@@ -186,3 +186,4 @@ if run_btn:
         
     else:
         st.error(msg)
+
