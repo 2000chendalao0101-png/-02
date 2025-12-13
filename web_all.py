@@ -9,7 +9,7 @@ def check_password():
     """Returns `True` if the user had the correct password."""
 
     # 这里设置你的密码 👇
-    actual_password = "20000101" 
+    actual_password = st.secrets["app_password"]
 
     def password_entered():
         """Checks whether a password entered by the user is correct."""
@@ -214,3 +214,4 @@ if run_btn:
 
     else:
         st.error(msg)
+
