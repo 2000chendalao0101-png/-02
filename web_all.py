@@ -1,11 +1,10 @@
 import streamlit as st
 import akshare as ak
-import talib
 import numpy as np
 import pandas as pd
 import datetime
 
-# --- 🛠️ 核心功能：智能获取数据 (东财源 - 稳定版) ---
+# --- 🛠️ 核心功能：智能获取数据 (东财源) ---
 def get_stock_data(code):
     code = code.strip().upper()
     df = pd.DataFrame()
@@ -17,7 +16,7 @@ def get_stock_data(code):
     try:
         # 1. 美股
         if code.isalpha() and len(code) <= 5:
-            market_type = "🇺🇸 美股 (东财源)"
+            market_type = "🇺🇸 美股"
             prefixes = ["105", "106", "107"] 
             for pre in prefixes:
                 try:
@@ -30,7 +29,7 @@ def get_stock_data(code):
 
         # 2. 港股
         elif code.isdigit() and len(code) == 5:
-            market_type = "🇭🇰 港股 (东财源)"
+            market_type = "🇭🇰 港股"
             try:
                 df = ak.stock_hk_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
                 df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
@@ -38,7 +37,7 @@ def get_stock_data(code):
 
         # 3. A股
         elif code.isdigit() and len(code) == 6:
-            market_type = "🇨🇳 A股 (东财源)"
+            market_type = "🇨🇳 A股"
             try:
                 df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
                 df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
@@ -53,10 +52,45 @@ def get_stock_data(code):
     except Exception as e:
         return None, f"错误: {str(e)}"
 
+# --- 🧮 纯 Pandas 计算指标 (代替 TA-Lib，为了部署稳定) ---
+def calculate_indicators(df):
+    # 确保是 float 类型
+    close = df['close'].astype(float)
+    
+    # 1. MACD (12, 26, 9)
+    # EMA12
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    # EMA26
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    # DIF
+    dif = ema12 - ema26
+    # DEA
+    dea = dif.ewm(span=9, adjust=False).mean()
+    # MACD Histogram
+    df['MACD_Hist'] = (dif - dea) * 2
+    
+    # 2. RSI (14)
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # 3. 布林带 (20, 2)
+    # 中轨
+    df['BB_Middle'] = close.rolling(window=20).mean()
+    # 标准差
+    std_dev = close.rolling(window=20).std()
+    # 上下轨
+    df['BB_Upper'] = df['BB_Middle'] + (2 * std_dev)
+    df['BB_Lower'] = df['BB_Middle'] - (2 * std_dev)
+    
+    return df
+
 # --- 🎨 网页界面 ---
-st.set_page_config(page_title="全球量化 V3", page_icon="📊", layout="wide")
-st.title("📊 全球股市多因子分析 (V3 增强版)")
-st.markdown("集成 **MACD + RSI + 布林带** 深度体检报告")
+st.set_page_config(page_title="全球量化 V3 (纯净版)", page_icon="📈", layout="wide")
+st.title("📈 全球股市多因子分析 (云端版)")
+st.markdown("无需复杂依赖，集成 **MACD + RSI + 布林带**")
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -72,26 +106,15 @@ if run_btn:
     if df is not None:
         st.success(f"✅ 成功获取 {msg} 数据！")
         
-        # 数据计算
+        # 数据清洗
+        df = df.reset_index(drop=True)
+        # 计算指标 (使用我们手写的函数，不依赖 TA-Lib)
+        df = calculate_indicators(df)
+        
+        # 截取最近 200 天用于展示
         if len(df) > 200:
             df = df.tail(200).reset_index(drop=True)
-        else:
-            df = df.reset_index(drop=True)
             
-        close = np.array(df['close'], dtype=np.float64)
-        
-        # 1. MACD
-        diff, dea, macd = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
-        df['MACD_Hist'] = macd * 2
-        
-        # 2. RSI
-        df['RSI'] = talib.RSI(close, timeperiod=14)
-        
-        # 3. 布林带
-        upper, middle, lower = talib.BBANDS(close, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
-        df['BB_Upper'] = upper
-        df['BB_Lower'] = lower
-        
         # 取最新一天
         curr = df.iloc[-1]
         
@@ -104,18 +127,25 @@ if run_btn:
         trend = "多头 🔴" if curr['MACD_Hist'] > 0 else "空头 🟢"
         c3.metric("🌊 MACD 趋势", trend, f"{curr['MACD_Hist']:.3f}")
         
-        bb_pos = (curr['close'] - curr['BB_Lower']) / (curr['BB_Upper'] - curr['BB_Lower']) * 100
+        bb_upper = curr['BB_Upper']
+        bb_lower = curr['BB_Lower']
+        # 防止除零错误
+        if bb_upper != bb_lower:
+            bb_pos = (curr['close'] - bb_lower) / (bb_upper - bb_lower) * 100
+        else:
+            bb_pos = 50.0
+            
         c4.metric("📊 布林带位置", f"{bb_pos:.1f}%")
 
-        # --- 🟡 第二部分：深度分析报告 (还原控制台风格) ---
+        # --- 🟡 第二部分：深度分析报告 ---
         st.subheader("📝 深度体检报告")
         
         # 准备文案
         macd_text = "处于上升趋势中 (红柱区域)" if curr['MACD_Hist'] > 0 else "处于下跌趋势中 (绿柱区域)"
         
         bb_status = "通道内震荡"
-        if curr['close'] < curr['BB_Lower']: bb_status = "⚠️ 跌破下轨 (超卖)"
-        elif curr['close'] > curr['BB_Upper']: bb_status = "⚠️ 突破上轨 (超买)"
+        if curr['close'] < bb_lower: bb_status = "⚠️ 跌破下轨 (超卖)"
+        elif curr['close'] > bb_upper: bb_status = "⚠️ 突破上轨 (超买)"
             
         rsi_status = "中性"
         if curr['RSI'] < 30: rsi_status = "🟢 超卖 (反弹概率大)"
@@ -124,7 +154,7 @@ if run_btn:
         # 综合信号
         final_signal = "⏸️ 暂无特殊信号，建议观望"
         signal_color = "blue"
-        if curr['close'] < curr['BB_Lower'] and curr['RSI'] < 30:
+        if curr['close'] < bb_lower and curr['RSI'] < 30:
             final_signal = "🚀 【强烈买入信号】股价破下轨 + RSI超卖！"
             signal_color = "green"
         elif curr['RSI'] > 70:
@@ -140,23 +170,22 @@ if run_btn:
 
         # --- 🔵 第三部分：走势图 ---
         st.subheader("📉 股价走势图")
+        # 整理画图数据
         chart_data = df[['time_key', 'close', 'BB_Upper', 'BB_Lower']].set_index('time_key')
         st.line_chart(chart_data, color=["#0000FF", "#FF0000", "#00FF00"])
 
-        # --- 🟣 第四部分：最近5天详细数据 (你想要的数据表！) ---
+        # --- 🟣 第四部分：最近5天详细数据 ---
         st.subheader("📜 近 5 个交易日详细数据")
         
-        # 整理一个漂亮的表格，只显示关键列
+        # 整理表格
         history_df = df[['time_key', 'close', 'RSI', 'BB_Lower', 'MACD_Hist']].tail(5).copy()
-        # 格式化一下数字，保留2位小数
-        history_df['close'] = history_df['close'].apply(lambda x: f"{x:.2f}")
-        history_df['RSI'] = history_df['RSI'].apply(lambda x: f"{x:.2f}")
-        history_df['BB_Lower'] = history_df['BB_Lower'].apply(lambda x: f"{x:.2f}")
+        
+        # 格式化
+        for col in ['close', 'RSI', 'BB_Lower']:
+            history_df[col] = history_df[col].apply(lambda x: f"{x:.2f}")
         history_df['MACD_Hist'] = history_df['MACD_Hist'].apply(lambda x: f"{x:.3f}")
         
-        # 按照日期倒序排列（最新的在最上面），符合看盘习惯
         history_df = history_df.sort_values(by='time_key', ascending=False)
-        
         st.dataframe(history_df, use_container_width=True)
 
     else:
