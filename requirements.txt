@@ -1,5 +1,4 @@
 streamlit
 akshare
-talib-binary
 pandas
 numpy
