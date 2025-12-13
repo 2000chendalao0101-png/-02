@@ -4,6 +4,46 @@ import numpy as np
 import pandas as pd
 import datetime
 
+# --- 🔐 第一步：密码保护功能 ---
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    # 这里设置你的密码 👇
+    actual_password = "20000101" 
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == actual_password:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input(
+            "🔑 请输入访问密码", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password not correct, show input + error.
+        st.text_input(
+            "🔑 请输入访问密码", type="password", on_change=password_entered, key="password"
+        )
+        st.error("❌ 密码错误，请重试")
+        return False
+    else:
+        # Password correct.
+        return True
+
+# --- 🚨 只有密码正确才会执行下面的代码 ---
+if not check_password():
+    st.stop()  # 停止运行，不显示后面的内容
+
+# ==========================================
+#      👇 下面是原本的核心功能代码 👇
+# ==========================================
+
 # --- 🛠️ 核心功能：智能获取数据 (东财源) ---
 def get_stock_data(code):
     code = code.strip().upper()
@@ -52,44 +92,42 @@ def get_stock_data(code):
     except Exception as e:
         return None, f"错误: {str(e)}"
 
-# --- 🧮 纯 Pandas 计算指标 (代替 TA-Lib，为了部署稳定) ---
+# --- 🧮 纯 Pandas 计算指标 ---
 def calculate_indicators(df):
-    # 确保是 float 类型
     close = df['close'].astype(float)
     
-    # 1. MACD (12, 26, 9)
-    # EMA12
+    # 1. MACD
     ema12 = close.ewm(span=12, adjust=False).mean()
-    # EMA26
     ema26 = close.ewm(span=26, adjust=False).mean()
-    # DIF
     dif = ema12 - ema26
-    # DEA
     dea = dif.ewm(span=9, adjust=False).mean()
-    # MACD Histogram
     df['MACD_Hist'] = (dif - dea) * 2
     
-    # 2. RSI (14)
+    # 2. RSI
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss
     df['RSI'] = 100 - (100 / (1 + rs))
     
-    # 3. 布林带 (20, 2)
-    # 中轨
+    # 3. 布林带
     df['BB_Middle'] = close.rolling(window=20).mean()
-    # 标准差
     std_dev = close.rolling(window=20).std()
-    # 上下轨
     df['BB_Upper'] = df['BB_Middle'] + (2 * std_dev)
     df['BB_Lower'] = df['BB_Middle'] - (2 * std_dev)
     
     return df
 
 # --- 🎨 网页界面 ---
-st.set_page_config(page_title="全球量化 V3 (纯净版)", page_icon="📈", layout="wide")
-st.title("📈 全球股市多因子分析 (云端版)")
+st.set_page_config(page_title="全球量化 V3 (加密版)", page_icon="🔐", layout="wide")
+
+# 侧边栏登出按钮
+with st.sidebar:
+    if st.button("🔒 退出登录"):
+        del st.session_state["password_correct"]
+        st.rerun()
+
+st.title("📈 全球股市多因子分析 (内部专用)")
 st.markdown("无需复杂依赖，集成 **MACD + RSI + 布林带**")
 
 # --- 侧边栏 ---
@@ -106,19 +144,15 @@ if run_btn:
     if df is not None:
         st.success(f"✅ 成功获取 {msg} 数据！")
         
-        # 数据清洗
         df = df.reset_index(drop=True)
-        # 计算指标 (使用我们手写的函数，不依赖 TA-Lib)
         df = calculate_indicators(df)
         
-        # 截取最近 200 天用于展示
         if len(df) > 200:
             df = df.tail(200).reset_index(drop=True)
             
-        # 取最新一天
         curr = df.iloc[-1]
         
-        # --- 🟢 第一部分：核心指标卡片 ---
+        # --- 🟢 指标卡片 ---
         st.divider()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("💰 最新收盘", f"{curr['close']:.2f}")
@@ -129,7 +163,6 @@ if run_btn:
         
         bb_upper = curr['BB_Upper']
         bb_lower = curr['BB_Lower']
-        # 防止除零错误
         if bb_upper != bb_lower:
             bb_pos = (curr['close'] - bb_lower) / (bb_upper - bb_lower) * 100
         else:
@@ -137,10 +170,9 @@ if run_btn:
             
         c4.metric("📊 布林带位置", f"{bb_pos:.1f}%")
 
-        # --- 🟡 第二部分：深度分析报告 ---
+        # --- 🟡 深度报告 ---
         st.subheader("📝 深度体检报告")
         
-        # 准备文案
         macd_text = "处于上升趋势中 (红柱区域)" if curr['MACD_Hist'] > 0 else "处于下跌趋势中 (绿柱区域)"
         
         bb_status = "通道内震荡"
@@ -151,7 +183,6 @@ if run_btn:
         if curr['RSI'] < 30: rsi_status = "🟢 超卖 (反弹概率大)"
         elif curr['RSI'] > 70: rsi_status = "🔴 超买 (回调风险大)"
             
-        # 综合信号
         final_signal = "⏸️ 暂无特殊信号，建议观望"
         signal_color = "blue"
         if curr['close'] < bb_lower and curr['RSI'] < 30:
@@ -161,30 +192,23 @@ if run_btn:
             final_signal = "⚠️ 【风险提示】RSI超买，注意止盈！"
             signal_color = "red"
 
-        # 使用 Markdown 展示详细报告
         st.info(f"""
         **1️⃣ MACD 分析**：{macd_text}  
         **2️⃣ 布林带分析**：股价处于通道的 **{bb_pos:.1f}%** 位置，状态为：**{bb_status}** **3️⃣ RSI 分析**：当前值为 {curr['RSI']:.2f}，判定为：**{rsi_status}** ---
         **🤖 综合决策建议**： :{signal_color}[**{final_signal}**]
         """)
 
-        # --- 🔵 第三部分：走势图 ---
+        # --- 🔵 走势图 ---
         st.subheader("📉 股价走势图")
-        # 整理画图数据
         chart_data = df[['time_key', 'close', 'BB_Upper', 'BB_Lower']].set_index('time_key')
         st.line_chart(chart_data, color=["#0000FF", "#FF0000", "#00FF00"])
 
-        # --- 🟣 第四部分：最近5天详细数据 ---
+        # --- 🟣 详细表格 ---
         st.subheader("📜 近 5 个交易日详细数据")
-        
-        # 整理表格
         history_df = df[['time_key', 'close', 'RSI', 'BB_Lower', 'MACD_Hist']].tail(5).copy()
-        
-        # 格式化
         for col in ['close', 'RSI', 'BB_Lower']:
             history_df[col] = history_df[col].apply(lambda x: f"{x:.2f}")
         history_df['MACD_Hist'] = history_df['MACD_Hist'].apply(lambda x: f"{x:.3f}")
-        
         history_df = history_df.sort_values(by='time_key', ascending=False)
         st.dataframe(history_df, use_container_width=True)
 
