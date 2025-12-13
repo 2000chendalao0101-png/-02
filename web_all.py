@@ -52,7 +52,7 @@ if not check_password():
 #      👇 下面是原本的核心功能代码 👇
 # ==========================================
 
-# --- 🛠️ 核心功能：智能获取数据 (东财源) ---
+# --- 🛠️ 核心功能：智能获取数据 (调试修复版) ---
 def get_stock_data(code):
     code = code.strip().upper()
     df = pd.DataFrame()
@@ -62,7 +62,7 @@ def get_stock_data(code):
     start_date = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime("%Y%m%d")
 
     try:
-        # 1. 美股
+        # 1. 美股 (美股需要试错前缀，所以保留 try-except 循环)
         if code.isalpha() and len(code) <= 5:
             market_type = "🇺🇸 美股"
             prefixes = ["105", "106", "107"] 
@@ -75,31 +75,29 @@ def get_stock_data(code):
             if not df.empty:
                 df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
 
-        # 2. 港股
+        # 2. 港股 (⚠️ 删除了内部的 try-except，让错误直接爆出来)
         elif code.isdigit() and len(code) == 5:
             market_type = "🇭🇰 港股"
-            try:
-                df = ak.stock_hk_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
-            except: pass
+            # 直接请求，如果有错，让外层捕获并显示
+            df = ak.stock_hk_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+            df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
 
-        # 3. A股
+        # 3. A股 (⚠️ 删除了内部的 try-except)
         elif code.isdigit() and len(code) == 6:
             market_type = "🇨🇳 A股"
-            try:
-                df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-                df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
-            except: pass
+            # 直接请求
+            df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
+            df = df.rename(columns={'日期': 'time_key', '开盘': 'open', '收盘': 'close', '最高': 'high', '最低': 'low', '成交量': 'volume'})
 
         else:
             return None, "❌ 代码格式无法识别"
 
-        if df.empty: return None, f"⚠️ 未找到 {code} 数据"
+        if df.empty: return None, f"⚠️ 未找到 {code} 数据 (可能是代码错误或退市)"
         return df, market_type
 
     except Exception as e:
-        return None, f"错误: {str(e)}"
-
+        # 🟢 这里会捕捉到真正的错误原因，并显示在网页红色报错条里
+        return None, f"数据源访问出错: {str(e)}"
 # --- 🧮 纯 Pandas 计算指标 ---
 def calculate_indicators(df):
     close = df['close'].astype(float)
@@ -222,3 +220,4 @@ if run_btn:
 
     else:
         st.error(msg)
+
