@@ -95,7 +95,7 @@ if st.button("🔒 退出", help="点击退出登录"):
     st.session_state.password_correct = False
     st.rerun()
 
-st.title("📱 全球量化 V4")
+st.title("📱 AI量化多因子分析系统 V4")
 
 # 👇【关键修改】直接在主页面显示搜索框，而不是 Sidebar
 c1, c2 = st.columns([3, 1]) # 分两列，左边输入框，右边按钮
@@ -144,4 +144,5 @@ if run_btn:
         st.dataframe(df.sort_values('time_key', ascending=False).head(5), use_container_width=True)
     else:
         st.error(msg)
+
 
