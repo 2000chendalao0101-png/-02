@@ -5,7 +5,7 @@ import numpy as np
 import datetime
 
 # --- 1️⃣ 基础配置与隐藏菜单 ---
-st.set_page_config(page_title="全球量化 V4 (移动端优化)", page_icon="📱", layout="wide")
+st.set_page_config(page_title="AI量化多因子分析系统 V4 (移动端优化)", page_icon="📱", layout="wide")
 
 # 依然保留隐藏菜单，让界面像个 App
 hide_st_style = """
@@ -144,3 +144,4 @@ if run_btn:
         st.dataframe(df.sort_values('time_key', ascending=False).head(5), use_container_width=True)
     else:
         st.error(msg)
+
